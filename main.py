@@ -1,4 +1,5 @@
 #!/bin/env python3
+import argparse
 import dataclasses
 import functools
 import heapq
@@ -11,12 +12,19 @@ from collections import defaultdict
 from copy import deepcopy
 from time import sleep
 
+
+parser = argparse.ArgumentParser()
+parser.add_argument("size", help="width x height")
+args = parser.parse_args()
+
 try:
-    if len(sys.argv) == 2:
-        random.seed(int(sys.argv[1]))
+    W, H = map(int, args.size.split('x'))
 except ValueError:
-    print("Usage: the-time-is [integer seed]", file=sys.stderr)
+    parser.print_usage(file=sys.stderr)
     sys.exit(1)
+
+
+ansi_clear = "\033[2J"
 
 digits = [
     "one",
@@ -59,25 +67,36 @@ hours = ["twelve", *digits, "ten", "eleven"]
 
 starts = ["the time is", "it is"]
 
-times = {}
+sentences = {}
 for ampm in ["am", "pm"]:
     for hour, hour_name in enumerate(hours, (0 if ampm == "am" else 12)):
-        times[(hour, 0)] = f"{random.choice(starts)} {hour_name} {ampm}"
+        sentences[(hour, 0)] = f"{random.choice(starts)} {hour_name} {ampm}"
         for minute, digit in enumerate(digits, 1):
-            times[
+            sentences[
                 (hour, minute)
             ] = f"{random.choice(starts)} {digit} past {hour_name} {ampm}"
         for minute, minute_name in enumerate(from_ten, 10):
-            times[
+            sentences[
                 (hour, minute)
             ] = f"{random.choice(starts)} {hour_name} {minute_name} {ampm}"
-        times[(hour, 15)] = f"{random.choice(starts)} quarter past {hour_name} {ampm}"
+        sentences[(hour, 15)] = f"{random.choice(starts)} quarter past {hour_name} {ampm}"
 
-times[(4, 20)] = times[(16, 20)] = "it is four twenty blaze it"
+sentences[(4, 20)] = sentences[(16, 20)] = "it is four twenty blaze it"
+sentences[(13, 35)] = 'one thirty five reticulating splines'
+sentences[(0, 0)] = 'it is midnight'
+sentences[(12, 0)] = 'it is noon'
 
-time_words = [sentence.split(" ") for sentence in times.values()]
+def insert_special(grid):
+    '''
+    This is called early on to make sure there is space in our grid for special words
+    '''
+    grid.insert(['quarter', 'past'], x=5, y=5)
+    grid.insert(['reticulating', 'splines'], x=10, y=10)
+    grid.insert(['midnight'], x=6, y=6)
+    grid.insert(['noon'], x=16, y=8)
+    grid.insert(['blaze', 'it'], x=9, y=15)
 
-W, H = 22, 22
+times = list(sentences.keys())
 
 
 @dataclasses.dataclass
@@ -193,17 +212,18 @@ class Grid(list):
 
         return None
 
-    def insert(self, words):
+    def insert(self, words, x=0, y=0, reverse=False):
         """
         Try insert a set of words, return their locations
         """
-        x, y = 0, 0
-        failed = False
         locations = []
 
         banned = set()
         failed = defaultdict(set)
         backups = []
+
+        if reverse:
+            words = list(reversed(list(word[::-1] for word in words)))
 
         # with open('progress', 'a') as f:
         #     print(words, file=f)
@@ -220,18 +240,12 @@ class Grid(list):
 
             # print(' '.join(words), '--', ' '.join(f'{l.xs}:{l.ys}' for l in locations), list(failed[idx]))
             search_configs = [
-                (3, False),
-                (1, True),
-                (5, False),
-                (3, True),
-                (7, False),
-                (5, True),
                 (10, False),
-                (7, True),
+                (3, True),
                 (15, False),
-                (10, True),
+                (5, True),
                 (20, False),
-                (15, True),
+                (10, True),
                 (None, False),
                 (None, True),
             ]
@@ -267,29 +281,21 @@ class Grid(list):
                     prev = locations[-1]
                 except IndexError:
                     prev = Location(0, 0, 0, 0, 0, 0)
-                # print(x, y, words, word)
-                # print(locations)
-                before = self.used()
-                # print(self.render())
+
                 self[:] = backups.pop()
-                if self.used() != before:
-                    print(before, "AFTER", self.used())
-                # print(self.render())
                 x = prev.xs
                 y = prev.ys
 
                 banned = set()
                 for location in locations:
                     banned.update(location.banned)
-
-                banned.add((last.xs, last.ys))
                 failed[idx - 1].add((last.xs, last.ys))
 
                 continue
 
             locations.append(found)
-            backups.append(self[:])
-            x, y, _, _, xd, yd = dataclasses.astuple(found)
+            backups.append(backup)
+            x, y = found.xs, found.ys
 
             banned.update(found.banned)
 
@@ -313,16 +319,43 @@ class Grid(list):
     def fill(self):
         for x in range(W):
             for y in range(H):
-                if self[x][y] == " ":
-                    self[x][y] = random.choice(string.ascii_lowercase)
+                if self[y][x] == " ":
+                    self[y][x] = random.choice(string.ascii_lowercase)
 
+    def display(self, text, highlight=set()):
+        sys.stderr.write(
+            ansi_clear + text + "\n" +             '=' * W + "\n" + self.render(highlight)
+        )
+        sys.stderr.flush()
 
 inserted = 0
+best = 0
+
+
+prefix_count = defaultdict(int)
+for sentence in sentences.values():
+    words = sentence.split(' ')
+    for idx in range(len(words)):
+        prefix_count[tuple(words[:idx+1])] += 1
+
+def sort_key(sentence):
+    words = sentence.split(' ')
+    return [
+        prefix_count[tuple(words[:idx + 1])] for idx in range(len(words))
+    ]
+
+
+sys.stderr.write(ansi_clear)
+
 while inserted < len(times):
     locations = {}
     grid = Grid()
 
-    random.shuffle(time_words)
+    # sort times by how often we see their prefices
+    times.sort(key=lambda time: sort_key(sentences[time]), reverse=True)
+
+    insert_special(grid)
+
     # Insert the first half of each phrase
     # print('Inserting first half')
     # for words in time_words:
@@ -330,31 +363,34 @@ while inserted < len(times):
 
     # # Flip the board and insert the last half
     # print('Inserting reversed last half')
-    # grid.flip()
-    # for words in time_words:
-    #     count = 1
-    #     grid.insert(list(reversed(list(word[::-1] for word in words[-count:]))))
-    # grid.flip()
+    grid.flip()
+    for digit in digits:
+        grid.insert([digit, "pm"], reverse=True)
+        grid.insert([digit, "am"], reverse=True)
+    grid.flip()
     # print(grid.render())
 
     # Flip back and insert full phrases
-    print("Inserting full phrases")
-    grid.flip()
+    # print("Inserting full phrases")
     random_time = None
     inserted = 0
-    for time, sentence in times.items():
-        locations[time] = grid.insert(sentence.split(" "))
+
+    for time in times:
+        locations[time] = grid.insert(sentences[time].split(' '))
         if not locations[time]:
-            print(f"Failed after {inserted} of {len(times)} times [{W}x{H}]")
+            if inserted > best:
+                best = inserted
+                grid.display(
+                    f"Best attempt so far {inserted}/{len(times)} [{math.floor(100*inserted/len(times))}% of {W}x{H}]"
+                )
             break
         inserted += 1
 
-print(f"Inserted {inserted} of {len(times)} times [{W}x{H}]")
-
-# grid.fill()
+grid.display("Success!")
+grid.fill()
 
 time_highlight = {}
-for time, letters in locations.items():
+for time, letters in sorted(locations.items()):
     highlight = set()
     for location in letters or []:
         x, y, xe, ye, xd, yd = dataclasses.astuple(location)
@@ -363,18 +399,18 @@ for time, letters in locations.items():
             (x, y) = x + xd, y + yd
     time_highlight[time] = highlight
 
-with open("output.json", "w") as f:
-    json.dump(
-        {
-            ("%02d:%02d" % time): list(highlight)
-            for time, highlight in time_highlight.items()
-        },
-        f,
-        sort_keys=True,
-    )
-    f.write("\n")
+json.dump(
+    {
+        ("%02d:%02d" % time): list(highlight)
+        for time, highlight in time_highlight.items()
+    },
+    sys.stdout,
+    sort_keys=True,
+)
+sys.stdout.write("\n")
+sys.stdout.flush()
 
 for time, highlight in time_highlight.items():
-    sys.stdout.write("\033[2J" + "%02d:%02d" % time + "\n" + grid.render(highlight))
-    sys.stdout.flush()
-    sleep(0.1)
+    grid.display("%02d:%02d" % time, highlight)
+    sys.stderr.flush()
+    sleep(0.25)
