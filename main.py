@@ -1,6 +1,7 @@
 #!/bin/env python3
 import functools
 import heapq
+import math
 import random
 import string
 import sys
@@ -33,18 +34,22 @@ hours = ['twelve', *digits, 'ten', 'eleven']
 times = []
 for ampm in ['am', 'pm']:
     for hour in hours:
-        times.append(f'the time is {hour} {ampm}.')
+        times.append(f'{hour} {ampm}.')
         for phrase in past:
-            times.append(f'the time is {phrase} past {hour} {ampm}.')
+            times.append(f'{phrase} past {hour} {ampm}.')
         for minute in minutes:
-            times.append(f'the time is {hour} {minute} {ampm}.')
+            times.append(f'{hour} {minute} {ampm}.')
 
 random.shuffle(times)
 
-W, H = 33, 33
+W, H = 25, 25
 grid = [[' '] * W for y in range(H)]
 
-def search(x, y, word, banned,  insert_if_empty=False):
+def flip_grid():
+    global grid
+    grid = [list(reversed(line)) for line in reversed(grid)]
+
+def search(x, y, word, banned, max_distance=None, insert_if_empty=False):
     '''
     Search for a word in the grid.
     Returns end position (x, y) and (xd, yd) direction vector
@@ -57,7 +62,7 @@ def search(x, y, word, banned,  insert_if_empty=False):
         '''
         Push item to heaped priority queue, with priority as distance from origin
         '''
-        if x + len(word) + 1 >= W or y + len(word) + 1 >= H:
+        if x >= W or y >= H:
             return
         if (x, y) in seen:
             return
@@ -66,8 +71,13 @@ def search(x, y, word, banned,  insert_if_empty=False):
             push(x, y + 1)
             return
     
+        distance = math.sqrt((x - start_x) ** 2 + (y - start_y) ** 2)
+        # distance = math.sqrt((x - 0) ** 2 + (y - 0) ** 2)
+        if max_distance and distance >= max_distance:
+            return
+
         seen.add((x, y))
-        heapq.heappush(priority_q, (x - start_x + y - start_y, x, y))
+        heapq.heappush(priority_q, (distance, x, y))
 
 
     def check(x, y, xd, yd):
@@ -78,12 +88,11 @@ def search(x, y, word, banned,  insert_if_empty=False):
                 return False
         return True
 
-    push(x + 1, y)
-    push(x, y + 1)
+    push(x, y)
     while priority_q:
         (distance, x, y) = heapq.heappop(priority_q)
 
-        directions = ([(+1, 0)] if x + len(word) < W else []) + ([(0, +1)] if y + len(word) < H else []) 
+        directions = ([(+1, 0)] if x + len(word) <= W else []) + ([(0, +1)] if y + len(word) <= H else []) 
         random.shuffle(directions)
 
         for (xd, yd) in directions:
@@ -98,32 +107,50 @@ def search(x, y, word, banned,  insert_if_empty=False):
 
     return None
     
-
-
-random_time = None
-inserted = 0
-for time in times:
+def insert(words):
+    '''
+    Try insert a set of words, return their locations
+    '''
     x, y = 0, 0
     failed = False
     locations = []
 
     banned = set()
+    for idx, word in enumerate(words):
+        found = False
+
+        search_configs = [
+            (3, False), (1, True),
+            (5, False), (3, True),
+            (7, False), (5, True),
+            (10, False), (7, True),
+            (15, False), (10, True),
+            (20, False), (15, True),
+            (None, False), (None, True),
+        ]
+        if idx == len(words) - 1:
+            search_configs = [(None, False), (None, True)] 
 
 
-    for word in time.split(' '):
-        found = search(x, y, word, banned)
-        
-        # after searching for existing, try insert it
+        for (max_distance, insert_if_empty) in search_configs:
+            found = search(x, y, word, banned, max_distance=max_distance, insert_if_empty=insert_if_empty)
+
+            if found:
+                break
+
         if not found:
-            found = search(x, y, word, banned, True)
+            x = 0
+            y = y + len(words[idx - 1]) + 1
+            found = search(x, y, word, banned, insert_if_empty=True)
 
         if not found:
-            failed = True
-            break
+            return None
 
         locations.append((word, found))
         x, y, _, _, xd, yd = found
 
+        banned.add((x, y))
+        
         # ban words immediately below a horizontal word (or next to vertical)
         for idx in range(len(word)):
             if xd > 0:
@@ -132,17 +159,60 @@ for time in times:
                 banned.add((x + 1, y + 1 * idx))
 
         # ban immediate trailing words
+        # @TODO: need to ban starting on last letter going same direction (but hard)
+        #        ban both for now
         if xd > 0:
             banned.add((x + len(word), y))
+            banned.add((x + len(word) - 1, y))
         else:
             banned.add((x, y + len(word)))
+            banned.add((x, y + len(word) - 1))
 
-    if failed:
-        continue
 
-    inserted += 1
-    if random.random() < 1 / (inserted):
-        random_time = locations
+    return locations
+
+def print_grid(highlight=set(), fill=False):
+    def render(x, y, letter):
+        if letter == ' ' and fill:
+            letter = random.choice(string.ascii_lowercase)
+        if (x, y) in highlight:
+            # apply a green highlight
+            letter = '\033[1;32m' + letter + '\033[0m'
+        return letter
+        
+    print()
+    for y, line in enumerate(grid):
+        print(''.join(
+            render(x, y, letter)
+            for x, letter in enumerate(line)
+        ))
+    print()
+
+# Insert the first half of each phrase
+print('Inserting first half')
+for time in times:
+    words = time.split(' ')
+    insert(['the', 'time', 'is'] + words[:len(words) // 2])
+
+# Flip the board and insert the last half
+print('Inserting reversed last half')
+flip_grid()
+for time in times:
+    words = time.split(' ')
+    words = list(reversed(list(word[::-1] for word in words[len(words) // 2:])))
+    insert(words)
+
+# Flip back and insert full phrases
+print('Inserting full phrases')
+flip_grid()
+random_time = None
+inserted = 0
+for time in times:
+    locations = insert(['the', 'time', 'is'] + time.split(' '))
+    if locations:
+        inserted += 1
+        if random.random() < 1 / (inserted):
+            random_time = locations
 
 print(f'Inserted {inserted} of {len(times)} times [{W}x{H}]')
 highlight = []
@@ -154,19 +224,4 @@ for location in random_time:
         highlight.append((x, y))
         (x, y) = x + xd, y + yd
 
-
-def render(x, y, letter):
-    if letter == ' ':
-        letter = random.choice(string.ascii_lowercase)
-    if (x, y) in highlight:
-        # apply a green highlight
-        letter = '\033[1;32m' + letter + '\033[0m'
-    return letter
-    
-print()
-for y, line in enumerate(grid):
-    print(''.join(
-        render(x, y, letter)
-        for x, letter in enumerate(line)
-    ))
-print()
+print_grid(highlight, fill=True)
