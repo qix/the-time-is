@@ -65,36 +65,43 @@ from_ten = [
 
 hours = ["twelve", *digits, "ten", "eleven"]
 
-starts = ["the time is", "it is"]
+starts = [""] # ["the time is", "it is"]
 
 sentences = {}
 for ampm in ["am", "pm"]:
     for hour, hour_name in enumerate(hours, (0 if ampm == "am" else 12)):
-        sentences[(hour, 0)] = f"{random.choice(starts)} {hour_name} {ampm}"
+        sentences[(hour, 0)] = f"{random.choice(starts)} {hour_name}"
         for minute, digit in enumerate(digits, 1):
             sentences[
                 (hour, minute)
-            ] = f"{random.choice(starts)} {digit} past {hour_name} {ampm}"
+            ] = f"{digit} past {hour_name}"
         for minute, minute_name in enumerate(from_ten, 10):
             sentences[
                 (hour, minute)
-            ] = f"{random.choice(starts)} {hour_name} {minute_name} {ampm}"
-        sentences[(hour, 15)] = f"{random.choice(starts)} quarter past {hour_name} {ampm}"
+            ] = f"{hour_name} {minute_name}"
+        # sentences[(hour, 15)] = f"{random.choice(starts)} quarter past {hour_name} {ampm}"
 
-sentences[(4, 20)] = sentences[(16, 20)] = "it is four twenty blaze it"
-sentences[(13, 35)] = 'one thirty five reticulating splines'
-sentences[(0, 0)] = 'it is midnight'
-sentences[(12, 0)] = 'it is noon'
+#sentences[(4, 20)] = sentences[(16, 20)] = "it is four twenty blaze it"
+#sentences[(13, 35)] = 'one thirty five reticulating splines'
+#sentences[(0, 0)] = 'it is midnight'
+#sentences[(12, 0)] = 'it is noon'
 
 def insert_special(grid):
     '''
     This is called early on to make sure there is space in our grid for special words
     '''
-    grid.insert(['quarter', 'past'], x=5, y=5)
-    grid.insert(['reticulating', 'splines'], x=10, y=10)
-    grid.insert(['midnight'], x=6, y=6)
-    grid.insert(['noon'], x=16, y=8)
-    grid.insert(['blaze', 'it'], x=9, y=15)
+    grid.insert(['past'], x=10, y=5)
+    #grid.insert(['quarter', 'past'], x=5, y=5)
+    #grid.insert(['reticulating', 'splines'], x=10, y=10)
+    #grid.insert(['midnight'], x=6, y=6)
+    #grid.insert(['noon'], x=16, y=8)
+    #grid.insert(['blaze', 'it'], x=9, y=15)
+
+def insert_reversed(grid):
+    'Once the grid is flipped'
+    #for digit in digits:
+    #    grid.insert([digit, "pm"], reverse=True)
+    #    grid.insert([digit, "am"], reverse=True)
 
 times = list(sentences.keys())
 
@@ -364,9 +371,7 @@ while inserted < len(times):
     # # Flip the board and insert the last half
     # print('Inserting reversed last half')
     grid.flip()
-    for digit in digits:
-        grid.insert([digit, "pm"], reverse=True)
-        grid.insert([digit, "am"], reverse=True)
+    insert_reversed(grid)
     grid.flip()
     # print(grid.render())
 
