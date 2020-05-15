@@ -90,7 +90,7 @@ def insert_special(grid):
     '''
     This is called early on to make sure there is space in our grid for special words
     '''
-    grid.insert(['past'], x=10, y=5)
+    grid.insert(['past'], x=random.randrange(1, 9), y=random.randrange(4, 10))
     #grid.insert(['quarter', 'past'], x=5, y=5)
     #grid.insert(['reticulating', 'splines'], x=10, y=10)
     #grid.insert(['midnight'], x=6, y=6)
@@ -99,7 +99,8 @@ def insert_special(grid):
 
 def insert_reversed(grid):
     'Once the grid is flipped'
-    #for digit in digits:
+    for hour in hours:
+        grid.insert([hour], reverse=True)
     #    grid.insert([digit, "pm"], reverse=True)
     #    grid.insert([digit, "am"], reverse=True)
 
